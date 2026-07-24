@@ -1327,13 +1327,7 @@ def _render_top_bar():
         )
 
         with brand_col:
-            update_snapshot = version_checker.poll_available_update(
-                config.project_version
-            )
-            if update_snapshot.complete:
-                _render_brand(update_snapshot.available_version)
-            else:
-                _render_pending_version_check()
+            _render_brand()
 
         with actions_col:
             with st.container(

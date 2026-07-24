@@ -1,10 +1,23 @@
-header[data-testid="stHeader"],
-div[data-testid="stToolbar"],
-div[data-testid="stDecoration"],
-div[data-testid="stStatusWidget"],
-div[data-testid="stSkillsNudgeAnchor"],
-div[data-testid="stSkillsNudge"] {
+/* Ocultar completamente todos los elementos por defecto de Streamlit */
+#MainMenu, 
+footer, 
+header, 
+[data-testid="stHeader"], 
+[data-testid="stToolbar"], 
+[data-testid="stDecoration"], 
+[data-testid="stStatusWidget"], 
+[data-testid="stSkillsNudgeAnchor"], 
+[data-testid="stSkillsNudge"],
+a[href*="streamlit.io"],
+.viewerBadge_container__1QSob,
+.viewerBadge_link__1S137 {
     display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 div[data-testid="stMainBlockContainer"] {
@@ -499,19 +512,37 @@ div[class*="st-key-main_settings_grid"] > div[data-testid="stColumn"]:hover {
 }
 
 .mpt-brand__logo {
-    height: 40px;
+    height: 44px;
     width: auto;
     object-fit: contain;
     vertical-align: middle;
-    margin-right: 0.6rem;
-    filter: drop-shadow(0 2px 8px rgba(99, 102, 241, 0.35));
+    margin-right: 0.75rem;
+    filter: drop-shadow(0 2px 10px rgba(99, 102, 241, 0.4));
 }
 
 .mpt-login-logo {
-    height: 76px;
+    height: 80px;
     width: auto;
     object-fit: contain;
     display: block;
-    margin: 0 auto 16px auto;
-    filter: drop-shadow(0 4px 16px rgba(99, 102, 241, 0.45));
+    margin: 0 auto 18px auto;
+    filter: drop-shadow(0 4px 20px rgba(99, 102, 241, 0.5));
+}
+
+.mpt-login-card, .mpt-register-card {
+    max-width: 460px;
+    margin: 70px auto 40px auto;
+    padding: 38px 36px;
+    border-radius: 20px;
+    background: rgba(15, 23, 42, 0.88) !important;
+    border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(99, 102, 241, 0.2) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.mpt-login-card:hover, .mpt-register-card:hover {
+    border-color: rgba(167, 139, 250, 0.5) !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(139, 92, 246, 0.3) !important;
 }
