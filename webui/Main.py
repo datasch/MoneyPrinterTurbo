@@ -1081,6 +1081,111 @@ def _render_pending_version_check():
     _render_brand()
 
 
+def _get_auth_credentials():
+    """从环境变量或配置中获取 WebUI 登录用户名和密码。"""
+    username = (
+        os.getenv("WEBUI_USERNAME")
+        or os.getenv("AUTH_USERNAME")
+        or os.getenv("ADMIN_USERNAME")
+        or config.app.get("webui_username", "")
+    ).strip()
+    password = (
+        os.getenv("WEBUI_PASSWORD")
+        or os.getenv("AUTH_PASSWORD")
+        or os.getenv("ADMIN_PASSWORD")
+        or config.app.get("webui_password", "")
+    ).strip()
+    return username, password
+
+
+def _render_login_page(expected_username, expected_password):
+    """渲染全屏居中登录页面。"""
+    st.markdown(
+        """
+        <style>
+        .mpt-login-card {
+            max-width: 440px;
+            margin: 60px auto 30px auto;
+            padding: 32px;
+            border-radius: 16px;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+        .mpt-login-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .mpt-login-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #F8FAFC;
+            margin-bottom: 6px;
+        }
+        .mpt-login-sub {
+            font-size: 0.9rem;
+            color: #94A3B8;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown(
+            f"""
+            <div class="mpt-login-card">
+                <div class="mpt-login-header">
+                    <div class="mpt-login-title">🔒 MoneyPrinterTurbo</div>
+                    <div class="mpt-login-sub">{tr("Please login to access settings")}</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.form(key="webui_login_form"):
+            input_user = st.text_input(tr("Username"), key="login_username_val")
+            input_pass = st.text_input(
+                tr("Password"), type="password", key="login_password_val"
+            )
+            login_btn = st.form_submit_button(
+                tr("Login"), type="primary", use_container_width=True
+            )
+
+            if login_btn:
+                user_val = (input_user or "").strip()
+                pass_val = (input_pass or "").strip()
+
+                if not user_val or not pass_val:
+                    st.warning(tr("Please enter your username and password"))
+                elif (
+                    expected_username and user_val != expected_username
+                ) or (
+                    expected_password and pass_val != expected_password
+                ):
+                    st.error(tr("Incorrect username or password"))
+                else:
+                    st.session_state["authenticated"] = True
+                    st.rerun(scope="app")
+
+    st.stop()
+
+
+def _check_authentication() -> bool:
+    """检查是否需要登录并验证会话状态。"""
+    username, password = _get_auth_credentials()
+    if not username and not password:
+        return True
+
+    if st.session_state.get("authenticated", False):
+        return True
+
+    _render_login_page(username, password)
+    return False
+
+
 def _render_top_bar():
     """渲染品牌、任务管理、设置和语言切换组成的页面顶部栏。"""
     # 顶部栏分为品牌区和操作区两个独立区域。窄屏下由 Streamlit
@@ -1120,6 +1225,18 @@ def _render_top_bar():
                 width="content",
             ):
                 st.session_state["settings_dialog_open"] = True
+
+            username_cfg, password_cfg = _get_auth_credentials()
+            if (username_cfg or password_cfg) and st.session_state.get("authenticated"):
+                if st.button(
+                    tr("Logout"),
+                    key="logout_button",
+                    type="secondary",
+                    icon=":material/logout:",
+                    width="content",
+                ):
+                    st.session_state["authenticated"] = False
+                    st.rerun(scope="app")
 
             language_codes = list(locales.keys())
             selected_index = 0
@@ -3954,4 +4071,5 @@ def _render_application():
         config.save_config()
 
 
-_render_application()
+if _check_authentication():
+    _render_application()

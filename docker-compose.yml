@@ -11,6 +11,8 @@ services:
       - "8501:8501"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WEBUI_USERNAME=${WEBUI_USERNAME}
+      - WEBUI_PASSWORD=${WEBUI_PASSWORD}
     command: [ "streamlit", "run", "./webui/Main.py", "--server.address=0.0.0.0", "--server.port=8501", "--browser.serverAddress=127.0.0.1", "--server.enableCORS=True", "--browser.gatherUsageStats=False", "--client.toolbarMode=minimal", "--logger.hideWelcomeMessage=True", "--server.showEmailPrompt=False" ]
     volumes: *common-volumes
     restart: always
@@ -23,6 +25,8 @@ services:
       - "8090:8080"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WEBUI_USERNAME=${WEBUI_USERNAME}
+      - WEBUI_PASSWORD=${WEBUI_PASSWORD}
     command: [ "python3", "main.py" ]
     volumes: *common-volumes
     restart: always
