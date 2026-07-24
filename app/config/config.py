@@ -326,6 +326,17 @@ app["redis_host"] = os.getenv(
     os.getenv("REDIS_HOST", app.get("redis_host", "localhost")),
 )
 
+env_llm_provider = os.getenv("LLM_PROVIDER") or os.getenv("MPT_LLM_PROVIDER")
+if env_llm_provider:
+    app["llm_provider"] = env_llm_provider
+
+env_openai_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("MPT_OPENAI_API_KEY")
+if env_openai_api_key and not app.get("openai_api_key"):
+    app["openai_api_key"] = env_openai_api_key
+
+if app.get("llm_provider") == "moonshot" and not app.get("moonshot_api_key") and app.get("openai_api_key"):
+    app["llm_provider"] = "openai"
+
 ffmpeg_path = app.get("ffmpeg_path", "")
 if ffmpeg_path and os.path.isfile(ffmpeg_path):
     os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
