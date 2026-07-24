@@ -306,7 +306,7 @@ def resolve_ui_language(
     saved_language: str | None,
     browser_locale: str | None,
     supported_languages: Iterable[str],
-    default_language: str = "en",
+    default_language: str = "es",
 ) -> str:
     """
     按“已保存设置、浏览器语言、默认语言”的优先级选择界面语言。
