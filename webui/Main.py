@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import html
 import json
@@ -50,9 +51,23 @@ from app.services import version_checker
 from app.utils.logging_utils import configure_terminal_logger
 from app.utils import utils
 
+def _get_logo_base64():
+    """读取 docs/public/Giantucchi ICO.png 并转换为 Base64 数据 URI。"""
+    logo_path = os.path.join(root_dir, "docs", "public", "Giantucchi ICO.png")
+    if os.path.isfile(logo_path):
+        try:
+            with open(logo_path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:image/png;base64,{encoded}"
+        except Exception:
+            pass
+    return ""
+
+
+logo_file_path = os.path.join(root_dir, "docs", "public", "Giantucchi ICO.png")
 st.set_page_config(
     page_title="Giantucchi Video Studio",
-    page_icon="🎬",
+    page_icon=logo_file_path if os.path.isfile(logo_file_path) else "🎬",
     layout="wide",
     initial_sidebar_state="auto",
     menu_items={
@@ -1046,14 +1061,12 @@ def _dismiss_settings_dialog():
 
 
 def _render_brand(available_update: str | None = None):
-    """渲染项目名称、当前版本和可选的更新入口。"""
+    """渲染 Giantucchi 品牌 Logo、项目名称、当前版本和可选的更新入口。"""
     update_link = ""
     if available_update:
         update_label = html.escape(
             tr("Update Available").format(version=available_update)
         )
-        # Streamlit 会继续用 Markdown 解析传入的 HTML。这里保持链接为单行，
-        # 避免多行字符串的缩进被识别成代码块，导致页面直接显示 HTML 源码。
         update_link = (
             '<a class="mpt-brand__update" '
             f'href="{version_checker.LATEST_RELEASE_PAGE_URL}" '
@@ -1061,9 +1074,14 @@ def _render_brand(available_update: str | None = None):
             f'aria-label="{update_label}" title="{update_label}">'
             f"{update_label}</a>"
         )
+
+    logo_b64 = _get_logo_base64()
+    logo_html = f'<img src="{logo_b64}" class="mpt-brand__logo" alt="Giantucchi Logo" />' if logo_b64 else ""
+
     st.markdown(
         f"""
         <h1 class="mpt-brand">
+            {logo_html}
             <span class="mpt-brand__name">Giantucchi <span class="mpt-brand__subtitle">Video Studio</span></span>
             <span class="mpt-brand__version">v{html.escape(str(config.project_version))}</span>
             {update_link}
@@ -1078,8 +1096,6 @@ def _render_pending_version_check():
     """检查未完成时只刷新品牌区域，避免阻塞或反复执行整页表单。"""
     snapshot = version_checker.poll_available_update(config.project_version)
     if snapshot.complete:
-        # 检查完成后刷新一次整页，让顶部栏改为静态渲染并停止 fragment 轮询。
-        # 该刷新发生在后台请求完成之后，不会延迟初始页面的其它内容。
         st.rerun(scope="app")
     _render_brand()
 
@@ -1137,14 +1153,19 @@ def _render_registration_page(token: str):
     )
 
     validation = pocketbase_auth.validate_invitation_token(token)
+    logo_b64 = _get_logo_base64()
+    logo_img_html = f'<img src="{logo_b64}" class="mpt-login-logo" alt="Giantucchi Logo" />' if logo_b64 else ""
 
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.markdown(
             f"""
             <div class="mpt-register-card">
-                <div class="mpt-register-title">✨ {tr("Invitation Link Registration")}</div>
-                <div class="mpt-register-sub">Giantucchi Video Studio — {tr("Single-use 1 hour link")}</div>
+                <div class="mpt-login-header">
+                    {logo_img_html}
+                    <div class="mpt-register-title">✨ {tr("Invitation Link Registration")}</div>
+                    <div class="mpt-register-sub">Giantucchi Video Studio — {tr("Single-use 1 hour link")}</div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1222,13 +1243,17 @@ def _render_login_page(expected_username, expected_password):
         unsafe_allow_html=True,
     )
 
+    logo_b64 = _get_logo_base64()
+    logo_img_html = f'<img src="{logo_b64}" class="mpt-login-logo" alt="Giantucchi Logo" />' if logo_b64 else ""
+
     _, col, _ = st.columns([1, 2, 1])
     with col:
         st.markdown(
             f"""
             <div class="mpt-login-card">
                 <div class="mpt-login-header">
-                    <div class="mpt-login-title">🎬 Giantucchi Video Studio</div>
+                    {logo_img_html}
+                    <div class="mpt-login-title">Giantucchi Video Studio</div>
                     <div class="mpt-login-sub">{tr("Please login to access settings")}</div>
                 </div>
             </div>
