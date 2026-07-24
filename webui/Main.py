@@ -50,16 +50,12 @@ from app.utils.logging_utils import configure_terminal_logger
 from app.utils import utils
 
 st.set_page_config(
-    page_title="MoneyPrinterTurbo",
-    page_icon="🤖",
+    page_title="Giantucchi Video Studio",
+    page_icon="🎬",
     layout="wide",
     initial_sidebar_state="auto",
     menu_items={
-        "Report a bug": "https://github.com/harry0703/MoneyPrinterTurbo/issues",
-        "About": "# MoneyPrinterTurbo\nSimply provide a topic or keyword for a video, and it will "
-        "automatically generate the video copy, video materials, video subtitles, "
-        "and video background music before synthesizing a high-definition short "
-        "video.\n\nhttps://github.com/harry0703/MoneyPrinterTurbo",
+        "About": "# Giantucchi Video Studio\nGenerador inteligente de vídeos cortos en alta definición mediante IA.\n\nGiantucchi Matrix System.",
     },
 )
 
@@ -1056,13 +1052,8 @@ def _render_brand(available_update: str | None = None):
     st.markdown(
         f"""
         <h1 class="mpt-brand">
-            <span class="mpt-brand__name">MoneyPrinterTurbo</span>
-            <a class="mpt-brand__version"
-               href="https://github.com/harry0703/MoneyPrinterTurbo"
-               target="_blank"
-               rel="noopener noreferrer"
-               aria-label="Open MoneyPrinterTurbo on GitHub"
-               title="Open project on GitHub">v{html.escape(str(config.project_version))}</a>
+            <span class="mpt-brand__name">Giantucchi <span class="mpt-brand__subtitle">Video Studio</span></span>
+            <span class="mpt-brand__version">v{html.escape(str(config.project_version))}</span>
             {update_link}
         </h1>
         """,
@@ -1108,18 +1099,21 @@ def _render_login_page(expected_username, expected_password):
             margin: 60px auto 30px auto;
             padding: 32px;
             border-radius: 16px;
-            background: rgba(30, 41, 59, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.15);
+            backdrop-filter: blur(12px);
         }
         .mpt-login-header {
             text-align: center;
             margin-bottom: 24px;
         }
         .mpt-login-title {
-            font-size: 1.75rem;
-            font-weight: 700;
-            color: #F8FAFC;
+            font-size: 1.85rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60A5FA 0%, #A78BFA 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             margin-bottom: 6px;
         }
         .mpt-login-sub {
@@ -1137,7 +1131,7 @@ def _render_login_page(expected_username, expected_password):
             f"""
             <div class="mpt-login-card">
                 <div class="mpt-login-header">
-                    <div class="mpt-login-title">🔒 MoneyPrinterTurbo</div>
+                    <div class="mpt-login-title">🎬 Giantucchi Video Studio</div>
                     <div class="mpt-login-sub">{tr("Please login to access settings")}</div>
                 </div>
             </div>

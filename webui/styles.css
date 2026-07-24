@@ -67,18 +67,31 @@ div[class*="st-key-voice_mode_control"] [role="radiogroup"] > button p {
 
 .mpt-brand__name {
     min-width: 0;
-    font-size: 2.75rem;
-    font-weight: 700;
-    letter-spacing: 0;
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
     white-space: nowrap;
+    background: linear-gradient(135deg, #60A5FA 0%, #A78BFA 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.mpt-brand__subtitle {
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #94A3B8;
+    -webkit-text-fill-color: #94A3B8;
+    margin-left: 0.3rem;
 }
 
 .mpt-brand__version {
     flex: 0 0 auto;
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    color: inherit !important;
-    opacity: 0.72;
+    color: #94A3B8 !important;
+    opacity: 0.85;
     text-decoration: none !important;
     white-space: nowrap;
 }
@@ -436,4 +449,51 @@ div[class*="st-key-task_row_"] button[kind="secondary"] p {
         width: auto !important;
         min-width: 1.75rem !important;
     }
+}
+
+/* -----------------------------------------------------------------------------
+   Giantucchi Video Studio - Dark Theme & Accent Styling
+   ----------------------------------------------------------------------------- */
+div[data-testid="stMainBlockContainer"] {
+    max-width: 1480px !important;
+}
+
+button[kind="primary"] {
+    background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%) !important;
+    border: none !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35) !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #4338CA 0%, #6D28D9 100%) !important;
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5) !important;
+    transform: translateY(-1px);
+}
+
+button[kind="secondary"] {
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+button[kind="secondary"]:hover {
+    border-color: rgba(99, 102, 241, 0.5) !important;
+    color: #A78BFA !important;
+}
+
+div[class*="st-key-main_settings_grid"] > div[data-testid="stColumn"] {
+    background: rgba(15, 23, 42, 0.55) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 14px !important;
+    padding: 1.1rem !important;
+    backdrop-filter: blur(12px) !important;
+    transition: all 0.25s ease-in-out !important;
+}
+
+div[class*="st-key-main_settings_grid"] > div[data-testid="stColumn"]:hover {
+    border-color: rgba(99, 102, 241, 0.35) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 0 15px rgba(99, 102, 241, 0.1) !important;
 }
