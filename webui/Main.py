@@ -472,9 +472,17 @@ def _scan_history_tasks(limit=30):
 
     task_entries.sort(key=lambda item: item[0], reverse=True)
     tasks = []
-    for mtime, name, task_path in task_entries[:limit]:
+    logged_user = st.session_state.get("logged_user", "")
+    is_admin = (logged_user == "giantucchi" or pocketbase_auth.get_user_role(logged_user) == "admin" or not logged_user)
+
+    for mtime, name, task_path in task_entries:
         script_data = _safe_load_task_script(task_path)
         params_data = script_data.get("params", {}) if script_data else {}
+        owner = params_data.get("owner", "") or script_data.get("owner", "")
+
+        if not is_admin and owner and owner != logged_user:
+            continue
+
         video_file = _find_final_task_video(task_path)
         subject = (
             params_data.get("video_subject")
@@ -491,8 +499,11 @@ def _scan_history_tasks(limit=30):
                 "task_path": task_path,
                 "video_file": video_file,
                 "source": "history",
+                "owner": owner,
             }
         )
+        if len(tasks) >= limit:
+            break
 
     return tasks
 
@@ -1308,17 +1319,19 @@ def _render_top_bar():
         ):
             _render_task_manager_entry()
 
-            if st.button(
-                tr("Settings"),
-                key="open_settings_dialog_button",
-                type="secondary",
-                icon=":material/settings:",
-                width="content",
-            ):
-                st.session_state["settings_dialog_open"] = True
+            logged_user = st.session_state.get("logged_user", "")
+            is_admin = (logged_user == "giantucchi" or pocketbase_auth.get_user_role(logged_user) == "admin" or not logged_user)
 
-            logged_user = st.session_state.get("logged_user", "giantucchi")
-            if logged_user == "giantucchi" or pocketbase_auth.get_user_role(logged_user) == "admin":
+            if is_admin:
+                if st.button(
+                    tr("Settings"),
+                    key="open_settings_dialog_button",
+                    type="secondary",
+                    icon=":material/settings:",
+                    width="content",
+                ):
+                    st.session_state["settings_dialog_open"] = True
+
                 if st.button(
                     tr("Generate Invitation Link"),
                     key="gen_invite_link_btn",
@@ -1326,7 +1339,7 @@ def _render_top_bar():
                     icon=":material/link:",
                     width="content",
                 ):
-                    new_token = pocketbase_auth.create_invitation_token(created_by=logged_user, expires_in_seconds=3600)
+                    new_token = pocketbase_auth.create_invitation_token(created_by=logged_user or "giantucchi", expires_in_seconds=3600)
                     st.session_state["generated_invite_token"] = new_token
 
     if st.session_state.get("generated_invite_token"):
