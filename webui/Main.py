@@ -1324,48 +1324,95 @@ def _render_top_bar():
             gap="small",
         )
 
-    with brand_col:
-        update_snapshot = version_checker.poll_available_update(
-            config.project_version
-        )
-        if update_snapshot.complete:
-            _render_brand(update_snapshot.available_version)
-        else:
-            _render_pending_version_check()
+        with brand_col:
+            update_snapshot = version_checker.poll_available_update(
+                config.project_version
+            )
+            if update_snapshot.complete:
+                _render_brand(update_snapshot.available_version)
+            else:
+                _render_pending_version_check()
 
-    with actions_col:
-        with st.container(
-            key="top_bar_actions",
-            horizontal=True,
-            horizontal_alignment="right",
-            vertical_alignment="center",
-            gap="small",
-            width="stretch",
-        ):
-            _render_task_manager_entry()
+        with actions_col:
+            with st.container(
+                key="top_bar_actions",
+                horizontal=True,
+                horizontal_alignment="right",
+                vertical_alignment="center",
+                gap="small",
+                width="stretch",
+            ):
+                _render_task_manager_entry()
 
-            logged_user = st.session_state.get("logged_user", "")
-            is_admin = (logged_user == "giantucchi" or pocketbase_auth.get_user_role(logged_user) == "admin" or not logged_user)
+                logged_user = st.session_state.get("logged_user", "")
+                is_admin = (
+                    logged_user == "giantucchi"
+                    or pocketbase_auth.get_user_role(logged_user) == "admin"
+                    or not logged_user
+                )
 
-            if is_admin:
-                if st.button(
-                    tr("Settings"),
-                    key="open_settings_dialog_button",
-                    type="secondary",
-                    icon=":material/settings:",
-                    width="content",
-                ):
-                    st.session_state["settings_dialog_open"] = True
+                if is_admin:
+                    if st.button(
+                        tr("Settings"),
+                        key="open_settings_dialog_button",
+                        type="secondary",
+                        icon=":material/settings:",
+                        width="content",
+                    ):
+                        st.session_state["settings_dialog_open"] = True
 
-                if st.button(
-                    tr("Generate Invitation Link"),
-                    key="gen_invite_link_btn",
-                    type="secondary",
-                    icon=":material/link:",
-                    width="content",
-                ):
-                    new_token = pocketbase_auth.create_invitation_token(created_by=logged_user or "giantucchi", expires_in_seconds=3600)
-                    st.session_state["generated_invite_token"] = new_token
+                    if st.button(
+                        tr("Generate Invitation Link"),
+                        key="gen_invite_link_btn",
+                        type="secondary",
+                        icon=":material/link:",
+                        width="content",
+                    ):
+                        new_token = pocketbase_auth.create_invitation_token(
+                            created_by=logged_user or "giantucchi",
+                            expires_in_seconds=3600,
+                        )
+                        st.session_state["generated_invite_token"] = new_token
+
+                if st.session_state.get("authenticated"):
+                    if st.button(
+                        tr("Logout"),
+                        key="logout_button",
+                        type="secondary",
+                        icon=":material/logout:",
+                        width="content",
+                    ):
+                        st.session_state["authenticated"] = False
+                        st.session_state.pop("logged_user", None)
+                        st.rerun(scope="app")
+
+                language_codes = list(locales.keys())
+                selected_index = 0
+                for i, code in enumerate(language_codes):
+                    if code == st.session_state.get("ui_language", ""):
+                        selected_index = i
+
+                selected_language_code = st.selectbox(
+                    "Language / 语言",
+                    options=language_codes,
+                    index=selected_index,
+                    format_func=lambda code: locales[code].get("Language", code),
+                    key="top_language_code_selector",
+                    label_visibility="collapsed",
+                    width=180,
+                )
+                if selected_language_code:
+                    previous_language = st.session_state.get("ui_language", "")
+                    if selected_language_code != previous_language:
+                        logger.info(
+                            "UI language changed by user: "
+                            f"previous_language={previous_language or '<empty>'}, "
+                            f"selected_language={selected_language_code}"
+                        )
+                        st.session_state["ui_language"] = selected_language_code
+                        config.ui["language"] = selected_language_code
+                        config.save_config()
+                        st.rerun()
 
     if st.session_state.get("generated_invite_token"):
         gen_token = st.session_state["generated_invite_token"]
@@ -1374,49 +1421,6 @@ def _render_top_bar():
             f"`/?invite={gen_token}`\n\n"
             f"*(Copia la ruta `/?invite={gen_token}` y agrégala al dominio público)*"
         )
-
-            if st.session_state.get("authenticated"):
-                if st.button(
-                    tr("Logout"),
-                    key="logout_button",
-                    type="secondary",
-                    icon=":material/logout:",
-                    width="content",
-                ):
-                    st.session_state["authenticated"] = False
-                    st.session_state.pop("logged_user", None)
-                    st.rerun(scope="app")
-
-            language_codes = list(locales.keys())
-            selected_index = 0
-            for i, code in enumerate(language_codes):
-                if code == st.session_state.get("ui_language", ""):
-                    selected_index = i
-
-            selected_language_code = st.selectbox(
-                "Language / 语言",
-                options=language_codes,
-                index=selected_index,
-                format_func=lambda code: locales[code].get("Language", code),
-                key="top_language_code_selector",
-                label_visibility="collapsed",
-                width=180,
-            )
-            if selected_language_code:
-                previous_language = st.session_state.get("ui_language", "")
-                if selected_language_code != previous_language:
-                    logger.info(
-                        "UI language changed by user: "
-                        f"previous_language={previous_language or '<empty>'}, "
-                        f"selected_language={selected_language_code}"
-                    )
-                    st.session_state["ui_language"] = selected_language_code
-                    # 浏览器自动识别只影响当前会话；只有用户主动切换下拉框时才
-                    # 写入 config.toml，后续新会话将优先使用该明确选择。
-                    config.ui["language"] = selected_language_code
-                    config.save_config()
-                    # 切换语言后强制刷新，避免 selectbox 继续展示旧语言文案。
-                    st.rerun()
 
 
 support_locales = [
