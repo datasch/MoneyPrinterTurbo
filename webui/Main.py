@@ -43,6 +43,7 @@ from app.services import bgm as bgm_service
 from app.services import cache_manager, llm, video, voice, webui_task
 from app.services import elevenlabs_music as elevenlabs_music_service
 from app.services import sonilo as sonilo_service
+from app.services import pocketbase_auth
 from app.services import state as sm
 from app.services import task as tm
 from app.services import version_checker
@@ -1089,6 +1090,91 @@ def _get_auth_credentials():
     return username, password
 
 
+def _render_registration_page(token: str):
+    """渲染基于 Single-use 1-Hour Token 的用户注册页面。"""
+    st.markdown(
+        """
+        <style>
+        .mpt-register-card {
+            max-width: 480px;
+            margin: 60px auto 30px auto;
+            padding: 32px;
+            border-radius: 16px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(139, 92, 246, 0.35);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(139, 92, 246, 0.2);
+            backdrop-filter: blur(12px);
+        }
+        .mpt-register-title {
+            font-size: 1.75rem;
+            font-weight: 800;
+            text-align: center;
+            background: linear-gradient(135deg, #A78BFA 0%, #F472B6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+        .mpt-register-sub {
+            text-align: center;
+            font-size: 0.9rem;
+            color: #94A3B8;
+            margin-bottom: 20px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    validation = pocketbase_auth.validate_invitation_token(token)
+
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown(
+            f"""
+            <div class="mpt-register-card">
+                <div class="mpt-register-title">✨ {tr("Invitation Link Registration")}</div>
+                <div class="mpt-register-sub">Giantucchi Video Studio — {tr("Single-use 1 hour link")}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if not validation.get("valid"):
+            st.error(tr("Invalid or Expired Invitation Link"))
+            st.info(tr("Only registration via invitation link is enabled"))
+            st.stop()
+
+        with st.form(key="webui_register_form"):
+            new_user = st.text_input(tr("Username"), key="reg_username_val")
+            new_pass = st.text_input(
+                tr("Password"), type="password", key="reg_password_val"
+            )
+            reg_btn = st.form_submit_button(
+                tr("Register New User"), type="primary", use_container_width=True
+            )
+
+            if reg_btn:
+                res = pocketbase_auth.register_user_with_token(
+                    token, new_user, new_pass
+                )
+                if res.get("success"):
+                    st.success(tr("User Registered Successfully"))
+                    if hasattr(st, "query_params"):
+                        st.query_params.clear()
+                    st.session_state.pop("invite_token_candidate", None)
+                    st.rerun(scope="app")
+                else:
+                    err = res.get("error")
+                    if err == "user_exists":
+                        st.error(tr("Incorrect username or password"))
+                    elif err in ("username_too_short", "password_too_short"):
+                        st.warning(tr("Please enter your username and password"))
+                    else:
+                        st.error(tr("Invalid or Expired Invitation Link"))
+
+    st.stop()
+
+
 def _render_login_page(expected_username, expected_password):
     """渲染全屏居中登录页面。"""
     st.markdown(
@@ -1154,28 +1240,39 @@ def _render_login_page(expected_username, expected_password):
 
                 if not user_val or not pass_val:
                     st.warning(tr("Please enter your username and password"))
-                elif (
-                    expected_username and user_val != expected_username
-                ) or (
-                    expected_password and pass_val != expected_password
-                ):
-                    st.error(tr("Incorrect username or password"))
                 else:
-                    st.session_state["authenticated"] = True
-                    st.rerun(scope="app")
+                    auth_ok = pocketbase_auth.authenticate_user(user_val, pass_val)
+                    if not auth_ok and (
+                        (expected_username and user_val == expected_username)
+                        and (expected_password and pass_val == expected_password)
+                    ):
+                        auth_ok = True
+
+                    if auth_ok:
+                        st.session_state["authenticated"] = True
+                        st.session_state["logged_user"] = user_val
+                        st.rerun(scope="app")
+                    else:
+                        st.error(tr("Incorrect username or password"))
 
     st.stop()
 
 
 def _check_authentication() -> bool:
-    """检查是否需要登录并验证会话状态。"""
-    username, password = _get_auth_credentials()
-    if not username and not password:
-        return True
+    """检查 URL 邀请 Token 或登录状态。"""
+    # 检查 URL 查询参数 ?invite=<token>
+    invite_token = None
+    if hasattr(st, "query_params") and "invite" in st.query_params:
+        invite_token = st.query_params.get("invite")
+
+    if invite_token:
+        _render_registration_page(invite_token)
+        return False
 
     if st.session_state.get("authenticated", False):
         return True
 
+    username, password = _get_auth_credentials()
     _render_login_page(username, password)
     return False
 
@@ -1220,8 +1317,27 @@ def _render_top_bar():
             ):
                 st.session_state["settings_dialog_open"] = True
 
-            username_cfg, password_cfg = _get_auth_credentials()
-            if (username_cfg or password_cfg) and st.session_state.get("authenticated"):
+            logged_user = st.session_state.get("logged_user", "giantucchi")
+            if logged_user == "giantucchi" or pocketbase_auth.get_user_role(logged_user) == "admin":
+                if st.button(
+                    tr("Generate Invitation Link"),
+                    key="gen_invite_link_btn",
+                    type="secondary",
+                    icon=":material/link:",
+                    width="content",
+                ):
+                    new_token = pocketbase_auth.create_invitation_token(created_by=logged_user, expires_in_seconds=3600)
+                    st.session_state["generated_invite_token"] = new_token
+
+    if st.session_state.get("generated_invite_token"):
+        gen_token = st.session_state["generated_invite_token"]
+        st.info(
+            f"🔗 **{tr('Invitation Link Generated')} (Válido 1 hora / 1 solo uso):**\n\n"
+            f"`/?invite={gen_token}`\n\n"
+            f"*(Copia la ruta `/?invite={gen_token}` y agrégala al dominio público)*"
+        )
+
+            if st.session_state.get("authenticated"):
                 if st.button(
                     tr("Logout"),
                     key="logout_button",
@@ -1230,6 +1346,7 @@ def _render_top_bar():
                     width="content",
                 ):
                     st.session_state["authenticated"] = False
+                    st.session_state.pop("logged_user", None)
                     st.rerun(scope="app")
 
             language_codes = list(locales.keys())

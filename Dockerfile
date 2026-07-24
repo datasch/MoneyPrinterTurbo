@@ -62,11 +62,19 @@ RUN if [ "$PIP_USE_OFFICIAL" = "1" ]; then \
         pip install --no-cache-dir --retries 3 --timeout 60 -r requirements.txt; \
     fi
 
+# Download and install PocketBase for user authentication and invitation management
+ARG POCKETBASE_VERSION=0.22.21
+RUN apt-get update && apt-get install -y --no-install-recommends wget unzip ca-certificates && \
+    (wget -q https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/pocketbase_${POCKETBASE_VERSION}_linux_amd64.zip -O /tmp/pb.zip || true) && \
+    mkdir -p /pb /pb_data && \
+    if [ -f /tmp/pb.zip ]; then unzip -o /tmp/pb.zip -d /pb && rm /tmp/pb.zip && chmod +x /pb/pocketbase || true; fi && \
+    rm -rf /var/lib/apt/lists/*
+
 # Now copy the rest of the codebase into the image
 COPY . .
 
-# Expose the ports the app runs on (8501 for WebUI, 8080 for API)
-EXPOSE 8501 8080
+# Expose the ports the app runs on (8501 for WebUI, 8080 for API, 8095 for PocketBase)
+EXPOSE 8501 8080 8095
 
 # 容器内部必须监听 0.0.0.0，宿主机仍通过 docker 端口映射限制为 127.0.0.1。
 # browser.serverAddress 只决定浏览器展示的访问地址，不能替代 server.address。
