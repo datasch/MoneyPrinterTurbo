@@ -425,6 +425,24 @@ def test_connection() -> tuple[bool, str, float]:
     return True, "", elapsed
 
 
+DEFAULT_PODCAST_SCRIPT_SYSTEM_PROMPT = """
+# Role: Podcast Dialogue Script Generator
+
+## Goals:
+Generate a engaging two-speaker podcast dialogue script based on the video subject.
+
+## Constraints:
+1. The script must be a natural conversation alternating between two speakers: [Voz 1] and [Voz 2].
+2. Every line must start with either [Voz 1] or [Voz 2].
+3. Example format:
+[Voz 1] ¡Hola a todos! Bienvenidos a nuestro episodio sobre este fascinante tema.
+[Voz 2] ¡Hola! Así es, hoy vamos a analizar los detalles más importantes.
+[Voz 1] Excelente, comencemos examinando el primer aspecto clave.
+4. Do not include markdown titles, intros, or stage directions. Only use [Voz 1] and [Voz 2] tags.
+5. Respond in the same language as the video subject.
+""".strip()
+
+
 def _limit_script_text(text: str | None, max_length: int, field_name: str) -> str:
     value = (text or "").strip()
     if len(value) <= max_length:
@@ -462,6 +480,7 @@ def build_script_prompt(
     paragraph_number: int = 1,
     video_script_prompt: str = "",
     custom_system_prompt: str = "",
+    voice_mode: str = "single",
 ) -> str:
     paragraph_number = _normalize_script_paragraph_number(paragraph_number)
     video_script_prompt = _limit_script_text(
@@ -473,7 +492,12 @@ def build_script_prompt(
 
     # 将“脚本生成规则”和“运行时上下文”分开拼接。这样高级用户即使覆盖默认
     # system prompt，也不会漏掉视频主题、语言、段落数这些每次生成都必须带上的参数。
-    prompt = custom_system_prompt or DEFAULT_SCRIPT_SYSTEM_PROMPT
+    default_prompt = (
+        DEFAULT_PODCAST_SCRIPT_SYSTEM_PROMPT
+        if voice_mode == "podcast"
+        else DEFAULT_SCRIPT_SYSTEM_PROMPT
+    )
+    prompt = custom_system_prompt or default_prompt
     prompt += f"""
 
 # Initialization:
@@ -498,6 +522,7 @@ def generate_script(
     paragraph_number: int = 1,
     video_script_prompt: str = "",
     custom_system_prompt: str = "",
+    voice_mode: str = "single",
 ) -> str:
     paragraph_number = _normalize_script_paragraph_number(paragraph_number)
     video_script_prompt = _limit_script_text(

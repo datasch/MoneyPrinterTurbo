@@ -91,9 +91,13 @@ class VideoParams(BaseModel):
     custom_audio_file: Optional[str] = None  # Custom audio file path, will ignore TTS and can still use Whisper subtitles
     video_language: Optional[str] = ""  # auto detect
 
+    voice_mode: Optional[str] = "single"  # "single" or "podcast"
     voice_name: Optional[str] = ""
     voice_volume: Optional[float] = 1.0
     voice_rate: Optional[float] = 1.0
+    voice_name_2: Optional[str] = ""
+    voice_volume_2: Optional[float] = 1.0
+    voice_rate_2: Optional[float] = 1.0
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
     bgm_volume: Optional[float] = 0.2

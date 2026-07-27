@@ -446,6 +446,159 @@ def tts(
     return azure_tts_v1(text, voice_name, voice_rate, voice_file)
 
 
+def merge_audio_files(audio_files: list[str], output_file: str) -> bool:
+    """Concatenate multiple audio files into a single output audio file using FFmpeg."""
+    if not audio_files:
+        return False
+    if len(audio_files) == 1:
+        import shutil
+        shutil.copy(audio_files[0], output_file)
+        return True
+
+    concat_list_file = output_file + ".concat.txt"
+    try:
+        with open(concat_list_file, "w", encoding="utf-8") as f:
+            for file_path in audio_files:
+                escaped_path = file_path.replace("\\", "/")
+                f.write(f"file '{escaped_path}'\n")
+
+        ffmpeg_binary = utils.get_ffmpeg_binary()
+        cmd = [
+            ffmpeg_binary,
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_list_file,
+            "-c", "copy",
+            output_file,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            cmd_reencode = [
+                ffmpeg_binary,
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_list_file,
+                "-acodec", "libmp3lame",
+                output_file,
+            ]
+            res_reencode = subprocess.run(cmd_reencode, capture_output=True, text=True, check=False)
+            if res_reencode.returncode != 0:
+                logger.error(f"failed to concat audio files: {res_reencode.stderr}")
+                return False
+        return os.path.exists(output_file) and os.path.getsize(output_file) > 0
+    finally:
+        if os.path.exists(concat_list_file):
+            try:
+                os.remove(concat_list_file)
+            except Exception:
+                pass
+
+
+def podcast_tts(
+    text: str,
+    voice_name_1: str,
+    voice_rate_1: float,
+    voice_volume_1: float,
+    voice_name_2: str,
+    voice_rate_2: float,
+    voice_volume_2: float,
+    voice_file: str,
+) -> Union[SubMaker, None]:
+    """
+    Synthesize a podcast dialogue script alternating between voice_name_1 and voice_name_2.
+    """
+    lines = [line.strip() for line in (text or "").split("\n") if line.strip()]
+    if not lines:
+        return None
+
+    turns = []
+    current_speaker = 1
+
+    for line in lines:
+        speaker = current_speaker
+        clean_text = line
+
+        m = re.match(r"^\[(?:Voz|Voice|Speaker|Locutor)\s*([12])\]\s*(.*)", line, re.IGNORECASE)
+        if m:
+            speaker = int(m.group(1))
+            clean_text = m.group(2).strip()
+            current_speaker = 3 - speaker
+        else:
+            m2 = re.match(r"^(?:Voz|Voice|Speaker|Locutor)\s*([12])\s*:\s*(.*)", line, re.IGNORECASE)
+            if m2:
+                speaker = int(m2.group(1))
+                clean_text = m2.group(2).strip()
+                current_speaker = 3 - speaker
+
+        if not clean_text:
+            continue
+
+        turns.append((speaker, clean_text))
+
+    if not turns:
+        return tts(text, voice_name_1, voice_rate_1, voice_file, voice_volume_1)
+
+    temp_dir = os.path.dirname(voice_file) or "."
+    audio_files = []
+    combined_sub_maker = ensure_legacy_submaker_fields(SubMaker())
+    cumulative_offset_100ns = 0
+
+    for idx, (speaker, turn_text) in enumerate(turns):
+        turn_voice = voice_name_1 if speaker == 1 else (voice_name_2 or voice_name_1)
+        turn_rate = voice_rate_1 if speaker == 1 else (voice_rate_2 or voice_rate_1)
+        turn_volume = voice_volume_1 if speaker == 1 else (voice_volume_2 or voice_volume_1)
+
+        temp_audio_file = os.path.join(
+            temp_dir, f"temp_podcast_{idx}_{int(time.time()*1000)}.mp3"
+        )
+
+        sub_maker = tts(
+            text=turn_text,
+            voice_name=turn_voice,
+            voice_rate=turn_rate,
+            voice_file=temp_audio_file,
+            voice_volume=turn_volume,
+        )
+
+        if not sub_maker or not os.path.exists(temp_audio_file):
+            logger.warning(f"failed to generate TTS for podcast turn {idx}: {turn_text}")
+            continue
+
+        audio_files.append(temp_audio_file)
+
+        turn_duration_sec = _get_audio_duration_from_file(temp_audio_file)
+        turn_duration_100ns = int(turn_duration_sec * 10**7)
+
+        if hasattr(sub_maker, "subs") and hasattr(sub_maker, "offset"):
+            for sub_text, (start_offset, end_offset) in zip(sub_maker.subs, sub_maker.offset):
+                combined_sub_maker.subs.append(sub_text)
+                combined_sub_maker.offset.append((
+                    start_offset + cumulative_offset_100ns,
+                    end_offset + cumulative_offset_100ns,
+                ))
+        cumulative_offset_100ns += turn_duration_100ns
+
+    if not audio_files:
+        logger.error("podcast TTS generated no audio segments")
+        return None
+
+    success = merge_audio_files(audio_files, voice_file)
+
+    for temp_f in audio_files:
+        try:
+            if os.path.exists(temp_f):
+                os.remove(temp_f)
+        except Exception:
+            pass
+
+    if not success:
+        return None
+
+    return combined_sub_maker
+
+
 def convert_rate_to_percent(rate: float) -> str:
     # edge-tts requires a sign-prefixed percentage (e.g. "+0%", "-20%").
     # Rounding can yield 0 for rates near but not equal to 1.0 (e.g. 1.004,

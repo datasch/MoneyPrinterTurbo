@@ -268,12 +268,14 @@ def generate_script(task_id, params):
     logger.info("\n\n## generating video script")
     video_script = params.video_script.strip()
     if not video_script:
+        voice_mode = getattr(params, "voice_mode", "single")
         video_script = llm.generate_script(
             video_subject=params.video_subject,
             language=params.video_language,
             paragraph_number=params.paragraph_number,
             video_script_prompt=params.video_script_prompt,
             custom_system_prompt=params.custom_system_prompt,
+            voice_mode=voice_mode,
         )
     else:
         logger.debug(f"video script: \n{video_script}")
@@ -477,12 +479,25 @@ def generate_audio(task_id, params, video_script, voice_preview=None):
 
         logger.info("no custom audio file provided, using TTS to generate audio.")
         audio_file = path.join(utils.task_dir(task_id), "audio.mp3")
-        sub_maker = voice.tts(
-            text=video_script,
-            voice_name=voice.parse_voice_name(params.voice_name),
-            voice_rate=params.voice_rate,
-            voice_file=audio_file,
-        )
+        voice_mode = getattr(params, "voice_mode", "single")
+        if voice_mode == "podcast":
+            sub_maker = voice.podcast_tts(
+                text=video_script,
+                voice_name_1=voice.parse_voice_name(params.voice_name),
+                voice_rate_1=params.voice_rate,
+                voice_volume_1=getattr(params, "voice_volume", 1.0),
+                voice_name_2=voice.parse_voice_name(getattr(params, "voice_name_2", params.voice_name)),
+                voice_rate_2=getattr(params, "voice_rate_2", params.voice_rate),
+                voice_volume_2=getattr(params, "voice_volume_2", 1.0),
+                voice_file=audio_file,
+            )
+        else:
+            sub_maker = voice.tts(
+                text=video_script,
+                voice_name=voice.parse_voice_name(params.voice_name),
+                voice_rate=params.voice_rate,
+                voice_file=audio_file,
+            )
         if sub_maker is None:
             _mark_task_failed(
                 task_id,

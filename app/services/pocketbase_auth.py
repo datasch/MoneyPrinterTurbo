@@ -1,5 +1,6 @@
 import hashlib
 import os
+import secrets
 import sqlite3
 import time
 import uuid
@@ -7,6 +8,9 @@ from datetime import datetime, timedelta
 from loguru import logger
 
 from app.config import config
+
+# Tiempo máximo de inactividad antes de caducar la sesión (6 horas)
+SESSION_IDLE_TIMEOUT_SECONDS = 6 * 60 * 60
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 AUTH_DB_DIR = os.path.join(ROOT_DIR, "storage", "auth")
@@ -54,6 +58,26 @@ def init_db():
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_sessions (
+                    session_token TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_accessed TIMESTAMP NOT NULL,
+                    expires_at TIMESTAMP NOT NULL
+                )
+                """
+            )
+            # Agregar columna expires_at si la tabla ya existía sin ella
+            try:
+                cursor.execute("ALTER TABLE web_sessions ADD COLUMN expires_at TIMESTAMP")
+                # Rellenar valor para filas existentes
+                cursor.execute(
+                    "UPDATE web_sessions SET expires_at = datetime(last_accessed, '+6 hours') WHERE expires_at IS NULL"
+                )
+            except Exception:
+                pass  # La columna ya existe
 
             # Obtener contraseña del administrador desde .env o usar valor por defecto
             admin_pass = (
@@ -209,6 +233,101 @@ def get_user_role(username: str) -> str:
             return row["role"]
 
     return "user"
+
+
+# ---------------------------------------------------------------------------
+# Gestión de sesiones persistentes
+# ---------------------------------------------------------------------------
+
+
+def create_session(username: str) -> str:
+    """Crear una nueva sesión persistente y retornar su token."""
+    init_db()
+    token = secrets.token_hex(32)
+    now = datetime.utcnow()
+    expires_at = now + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO web_sessions (session_token, username, created_at, last_accessed, expires_at) VALUES (?, ?, ?, ?, ?)",
+            (token, username, now.isoformat(), now.isoformat(), expires_at.isoformat()),
+        )
+        conn.commit()
+    logger.info(f"Created persistent session for user '{username}'")
+    return token
+
+
+def validate_session(token: str) -> str | None:
+    """
+    Validar un token de sesión.
+
+    Retorna el nombre de usuario si la sesión es válida y no ha expirado;
+    retorna None en caso contrario.
+    """
+    if not token:
+        return None
+    init_db()
+    now = datetime.utcnow()
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT username, expires_at FROM web_sessions WHERE session_token = ?",
+            (token,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        try:
+            expires_at = datetime.fromisoformat(row["expires_at"])
+        except (TypeError, ValueError):
+            return None
+        if now > expires_at:
+            # Sesión expirada → limpiar
+            cursor.execute("DELETE FROM web_sessions WHERE session_token = ?", (token,))
+            conn.commit()
+            logger.info("Expired session removed")
+            return None
+    return row["username"]
+
+
+def touch_session(token: str) -> None:
+    """Actualizar last_accessed y extender expires_at para la sesión activa."""
+    if not token:
+        return
+    now = datetime.utcnow()
+    expires_at = now + timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS)
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE web_sessions SET last_accessed = ?, expires_at = ? WHERE session_token = ?",
+            (now.isoformat(), expires_at.isoformat(), token),
+        )
+        conn.commit()
+
+
+def delete_session(token: str) -> None:
+    """Eliminar una sesión (logout explícito)."""
+    if not token:
+        return
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM web_sessions WHERE session_token = ?", (token,))
+        conn.commit()
+    logger.info("Session deleted (explicit logout)")
+
+
+def cleanup_expired_sessions() -> int:
+    """Eliminar todas las sesiones expiradas. Retorna el número de filas eliminadas."""
+    init_db()
+    now = datetime.utcnow().isoformat()
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM web_sessions WHERE expires_at < ?", (now,))
+        deleted = cursor.rowcount
+        conn.commit()
+    if deleted:
+        logger.info(f"Cleaned up {deleted} expired session(s)")
+    return deleted
 
 
 # Inicializar DB al importar

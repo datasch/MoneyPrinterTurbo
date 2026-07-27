@@ -605,12 +605,11 @@ def _open_task_path(task_path):
         webbrowser.open(f"file://{normalized_path}")
 
 
-def _open_task_video(video_file):
+def _open_task_video(video_file, task_id=""):
     tasks_root = os.path.abspath(utils.task_dir())
     normalized_file = os.path.abspath(video_file)
 
-    # 视频路径来自任务目录扫描或运行期状态。这里仍然限制只能打开任务目录
-    # 内的文件，避免 UI 操作被异常路径扩展成任意本地文件打开能力。
+    # Validar que el archivo esté dentro del directorio de tareas
     if not normalized_file.startswith(tasks_root + os.sep):
         logger.warning(f"invalid task video path: {normalized_file}")
         return
@@ -618,15 +617,10 @@ def _open_task_video(video_file):
         logger.warning(f"task video does not exist: {normalized_file}")
         return
 
-    try:
-        if sys.platform == "darwin":
-            subprocess.Popen(["open", normalized_file])
-        elif sys.platform.startswith("win"):
-            os.startfile(normalized_file)  # type: ignore[attr-defined]
-        else:
-            subprocess.Popen(["xdg-open", normalized_file])
-    except Exception as e:
-        logger.error(f"failed to open task video: {normalized_file}, {e}")
+    # En entorno Docker/VPS no se puede abrir el explorador de archivos local.
+    # En su lugar, se muestra el video embebido en la misma UI.
+    st.session_state["preview_video_file"] = normalized_file
+    st.session_state["preview_video_task_id"] = task_id or ""
 
 
 def _delete_task(task_id, task_path, task_state=None):
@@ -743,7 +737,7 @@ def _render_task_table(filtered_tasks, key_prefix):
                         help=play_label,
                         disabled=not has_video,
                     ):
-                        _open_task_video(task["video_file"])
+                        _open_task_video(task["video_file"], task_id)
 
                 with action_cols[1]:
                     open_label = tr("Open Task Folder")
@@ -788,6 +782,36 @@ def _render_task_table(filtered_tasks, key_prefix):
                             st.rerun()
                         else:
                             st.error(tr("Task Delete Failed"))
+
+                # Reproductor de video embebido (aparece bajo las acciones al pulsar Reproducir)
+                preview_file = st.session_state.get("preview_video_file", "")
+                preview_task = st.session_state.get("preview_video_task_id", "")
+                if preview_file and preview_task == task_id and os.path.isfile(preview_file):
+                    st.divider()
+                    close_col, _ = st.columns([1, 8])
+                    with close_col:
+                        if st.button(
+                            "\u274c",
+                            key=f"close_preview_{key_prefix}_{task_id}",
+                            help=tr("Close preview"),
+                        ):
+                            st.session_state.pop("preview_video_file", None)
+                            st.session_state.pop("preview_video_task_id", None)
+                            st.rerun()
+                    try:
+                        with open(preview_file, "rb") as _vf:
+                            video_bytes = _vf.read()
+                        st.video(video_bytes)
+                        st.download_button(
+                            label=f"\u2b07\ufe0f {tr('Download')}",
+                            data=video_bytes,
+                            file_name=os.path.basename(preview_file),
+                            mime="video/mp4",
+                            key=f"dl_video_{key_prefix}_{task_id}",
+                            use_container_width=True,
+                        )
+                    except Exception as _ve:
+                        st.error(f"{tr('Could not load video')}: {_ve}")
 
 
 def _render_task_manager_panel(tasks=None):
@@ -1289,6 +1313,12 @@ def _render_login_page(expected_username, expected_password):
                     if auth_ok:
                         st.session_state["authenticated"] = True
                         st.session_state["logged_user"] = user_val
+                        # Crear sesión persistente (sobrevive recarga de página)
+                        try:
+                            session_token = pocketbase_auth.create_session(user_val)
+                            st.session_state["session_token"] = session_token
+                        except Exception as _se:
+                            logger.warning(f"could not create persistent session: {_se}")
                         st.rerun(scope="app")
                     else:
                         st.error(tr("Incorrect username or password"))
@@ -1306,6 +1336,29 @@ def _check_authentication() -> bool:
     if invite_token:
         _render_registration_page(invite_token)
         return False
+
+    # --- Sesión persistente: validar token guardado en session_state contra la BD ---
+    persistent_token = st.session_state.get("session_token", "")
+    if persistent_token and not st.session_state.get("authenticated", False):
+        try:
+            username_from_token = pocketbase_auth.validate_session(persistent_token)
+            if username_from_token:
+                # Restaurar sesión automáticamente
+                st.session_state["authenticated"] = True
+                st.session_state["logged_user"] = username_from_token
+                pocketbase_auth.touch_session(persistent_token)
+            else:
+                # Token expirado → limpiar
+                st.session_state.pop("session_token", None)
+        except Exception as _ve:
+            logger.warning(f"session validation error: {_ve}")
+
+    # Refrescar last_accessed en cada visita para sesiones activas
+    if st.session_state.get("authenticated") and persistent_token:
+        try:
+            pocketbase_auth.touch_session(persistent_token)
+        except Exception:
+            pass
 
     if st.session_state.get("authenticated", False):
         return True
@@ -1378,8 +1431,16 @@ def _render_top_bar():
                         icon=":material/logout:",
                         width="content",
                     ):
+                        # Eliminar sesión persistente de la BD
+                        try:
+                            pocketbase_auth.delete_session(
+                                st.session_state.get("session_token", "")
+                            )
+                        except Exception:
+                            pass
                         st.session_state["authenticated"] = False
                         st.session_state.pop("logged_user", None)
+                        st.session_state.pop("session_token", None)
                         st.rerun(scope="app")
 
                 language_codes = list(locales.keys())
@@ -1571,16 +1632,71 @@ def render_onboarding_tour():
         tour.start()
 
 
+def _get_progress_stage(progress: int) -> tuple[str, str, str]:
+    """
+    Mapea el porcentaje de progreso a (icono, etapa, frase amigable).
+    Retorna la tupla para el bloque de progreso más cercano por debajo del progreso actual.
+    """
+    stages = [
+        (0,  "\u23f3", "Generation Starting",         "Preparing Generation"),
+        (5,  "\ud83d\udcdd", "Generating Script",           "Generating Script Phrase"),
+        (10, "\ud83d\udd0d", "Searching Keywords",         "Searching Keywords Phrase"),
+        (20, "\ud83c\udfa4", "Generating Audio",           "Generating Audio Phrase"),
+        (30, "\ud83d\udcac", "Generating Subtitles",       "Generating Subtitles Phrase"),
+        (40, "\ud83c\udfa5", "Downloading Materials",      "Downloading Materials Phrase"),
+        (50, "\u2702\ufe0f", "Combining Videos",           "Combining Videos Phrase"),
+        (90, "\u2728", "Finishing",                   "Finishing Phrase"),
+    ]
+    best = stages[0]
+    for threshold, icon, stage_key, phrase_key in stages:
+        if progress >= threshold:
+            best = (threshold, icon, stage_key, phrase_key)
+    _, icon, stage_key, phrase_key = best
+    return icon, tr(stage_key), tr(phrase_key)
+
+
 def _render_generation_logs(task_id):
-    """渲染后台任务日志快照，不从工作线程访问 Streamlit 会话状态。"""
-    if config.ui.get("hide_log", False):
+    """Muestra un panel de progreso amigable en lugar del log crudo.
+
+    Solo se muestra mientras la tarea está en proceso (PROCESSING).
+    Cuando está completa o fallida, esta función no genera ninguna salida
+    para no interferir con los mensajes de éxito/error ya renderizados.
+    """
+    task = None
+    try:
+        task = sm.state.get_task(task_id)
+    except Exception:
+        pass
+
+    task_state = _normalize_task_state((task or {}).get("state"))
+    # Solo mostrar el panel de progreso mientras la tarea está procesando
+    if task_state in {const.TASK_STATE_COMPLETE, const.TASK_STATE_FAILED}:
         return
 
-    log_records = webui_task.get_task_logs(task_id)
-    if not log_records:
-        return
+    progress = max(0, min(100, int((task or {}).get("progress", 0) or 0)))
+    icon, stage_name, phrase = _get_progress_stage(progress)
 
-    st.code("\n".join(log_records))
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, rgba(15,23,42,0.85) 0%, rgba(30,41,59,0.85) 100%);
+            border: 1px solid rgba(99,102,241,0.3);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin: 12px 0;
+            backdrop-filter: blur(10px);
+        ">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                <span style="font-size:1.6rem;">{icon}</span>
+                <div>
+                    <div style="font-size:1rem; font-weight:700; color:#e2e8f0;">{stage_name}</div>
+                    <div style="font-size:0.85rem; color:#94a3b8; margin-top:2px;">{phrase}</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_generation_task_snapshot(task_id, task):
@@ -1593,10 +1709,11 @@ def _render_generation_task_snapshot(task_id, task):
     state = _normalize_task_state(task.get("state"))
     progress = max(0, min(100, int(task.get("progress", 0) or 0)))
     if state == const.TASK_STATE_PROCESSING:
-        st.info(tr("Generating Video"))
+        icon, stage_name, phrase = _get_progress_stage(progress)
+        # Barra de progreso nativa de Streamlit con texto de etapa
         st.progress(
-            progress,
-            text=f"{tr('Task Progress')}: {progress}%",
+            progress / 100,
+            text=f"{icon} **{stage_name}** — {phrase} ({progress}%)",
         )
         _render_generation_logs(task_id)
         return
@@ -2025,7 +2142,11 @@ def _render_cache_management_settings(panel):
             use_container_width=True,
             icon=":material/folder_open:",
         ):
-            webbrowser.open(Path(cache_manager.video_cache_dir()).as_uri())
+            try:
+                webbrowser.open(Path(cache_manager.video_cache_dir()).as_uri())
+            except Exception as e:
+                logger.warning(f"failed to open cache directory in browser/explorer: {e}")
+                st.toast(f"Directorio en contenedor: {cache_manager.video_cache_dir()}", icon="📁")
 
         cleanup_disabled = not confirmed or cleanup_preview.file_count == 0
         if cleanup_col.button(
@@ -3454,8 +3575,17 @@ def _render_audio_settings(panel, params):
 
             # 确保有声音可选
             if tts_mode_enabled and friendly_names:
+                voice_mode_selected = st.radio(
+                    tr("Voice Mode") if "Voice Mode" in tr("Voice Mode") else "Modo de Locución",
+                    options=["single", "podcast"],
+                    format_func=lambda x: "Locutor Único" if x == "single" else "🎙️ Podcast / 2 Voces (Diálogo)",
+                    horizontal=True,
+                    key=f"voice_mode_radio_{selected_tts_server}",
+                )
+                params.voice_mode = voice_mode_selected
+
                 voice_name = stable_selectbox(
-                    tr("Voiceover Voice"),
+                    tr("Voiceover Voice") if voice_mode_selected == "single" else "Voz 1 (Locutor A)",
                     options=list(friendly_names.keys()),
                     default_value=list(friendly_names.keys())[saved_voice_name_index],
                     key=f"speech_synthesis_select_{selected_tts_server}",
@@ -3464,9 +3594,25 @@ def _render_audio_settings(panel, params):
 
                 params.voice_name = voice_name
                 if not voice.is_no_voice(voice_name):
-                    # 占位 sentinel 仅用于非自动模式的禁用展示，不覆盖用户上一次
-                    # 真正选择的音色，切回自动配音后可以恢复原设置。
                     config.ui["voice_name"] = voice_name
+
+                if voice_mode_selected == "podcast":
+                    saved_voice_2 = config.ui.get("voice_name_2", "")
+                    saved_voice_2_idx = 0
+                    if saved_voice_2 in friendly_names:
+                        saved_voice_2_idx = list(friendly_names.keys()).index(saved_voice_2)
+                    elif len(friendly_names) > 1:
+                        saved_voice_2_idx = 1
+
+                    voice_name_2 = stable_selectbox(
+                        "Voz 2 (Locutor B)",
+                        options=list(friendly_names.keys()),
+                        default_value=list(friendly_names.keys())[saved_voice_2_idx],
+                        key=f"speech_synthesis_select_2_{selected_tts_server}",
+                        format_func=lambda value: friendly_names[value],
+                    )
+                    params.voice_name_2 = voice_name_2
+                    config.ui["voice_name_2"] = voice_name_2
             elif tts_mode_enabled:
                 # 如果没有声音可选，显示提示信息
                 st.warning(

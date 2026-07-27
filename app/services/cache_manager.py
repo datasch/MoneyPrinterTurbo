@@ -51,7 +51,7 @@ class _VideoCacheEntry:
 def video_cache_dir() -> str:
     """返回项目管理的默认视频缓存目录。"""
 
-    return os.path.realpath(utils.storage_dir("cache_videos"))
+    return os.path.realpath(utils.storage_dir("cache_videos", create=True))
 
 
 def _iter_video_cache_entries() -> Iterator[_VideoCacheEntry]:
