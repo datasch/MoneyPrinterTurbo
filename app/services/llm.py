@@ -537,6 +537,7 @@ def generate_script(
         paragraph_number=paragraph_number,
         video_script_prompt=video_script_prompt,
         custom_system_prompt=custom_system_prompt,
+        voice_mode=voice_mode,
     )
     final_script = ""
     logger.info(

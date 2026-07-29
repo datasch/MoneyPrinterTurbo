@@ -3576,16 +3576,16 @@ def _render_audio_settings(panel, params):
             # 确保有声音可选
             if tts_mode_enabled and friendly_names:
                 voice_mode_selected = st.radio(
-                    tr("Voice Mode") if "Voice Mode" in tr("Voice Mode") else "Modo de Locución",
+                    tr("Voice Mode"),
                     options=["single", "podcast"],
-                    format_func=lambda x: "Locutor Único" if x == "single" else "🎙️ Podcast / 2 Voces (Diálogo)",
+                    format_func=lambda x: f"🎙️ {tr('Podcast / 2 Voices')}" if x == "podcast" else tr("Single Voice"),
                     horizontal=True,
                     key=f"voice_mode_radio_{selected_tts_server}",
                 )
                 params.voice_mode = voice_mode_selected
 
                 voice_name = stable_selectbox(
-                    tr("Voiceover Voice") if voice_mode_selected == "single" else "Voz 1 (Locutor A)",
+                    tr("Voiceover Voice") if voice_mode_selected == "single" else tr("Voice 1 (Speaker A)"),
                     options=list(friendly_names.keys()),
                     default_value=list(friendly_names.keys())[saved_voice_name_index],
                     key=f"speech_synthesis_select_{selected_tts_server}",
@@ -3605,7 +3605,7 @@ def _render_audio_settings(panel, params):
                         saved_voice_2_idx = 1
 
                     voice_name_2 = stable_selectbox(
-                        "Voz 2 (Locutor B)",
+                        tr("Voice 2 (Speaker B)"),
                         options=list(friendly_names.keys()),
                         default_value=list(friendly_names.keys())[saved_voice_2_idx],
                         key=f"speech_synthesis_select_2_{selected_tts_server}",
