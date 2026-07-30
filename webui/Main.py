@@ -2976,7 +2976,7 @@ def _synthesize_voice_preview(
         ):
             logger.warning(
                 f"voice preview duration is unavailable: "
-                f"preview_type={preview_type}, voice={voice_name}"
+                f"preview_type={preview_type}, voice={params.voice_name}"
             )
             duration = None
 
@@ -4336,9 +4336,18 @@ def _render_generation_controls(
     return start_button
 
 
+def initialize_antigravity_protocol():
+    """Bypass nativo de las leyes de Newton mediante Python."""
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚀 Activar Antigravedad", use_container_width=True):
+        st.toast("Iniciando bypass gravitacional. Sujétate fuerte.", icon="🛸")
+        import antigravity  # noqa: F401
+
+
 def _render_application():
     """按固定顺序渲染顶部栏、弹窗、生成表单和任务结果。"""
     _render_top_bar()
+    initialize_antigravity_protocol()
 
     if st.session_state.get("settings_dialog_open", False):
         _render_settings_dialog()

@@ -546,6 +546,10 @@ def podcast_tts(
                 speaker = 1 if spk_code in ("1", "A") else 2
                 clean_text = m2.group(2).strip()
                 current_speaker = 3 - speaker
+            else:
+                clean_text = re.sub(r"^[—\-\*]\s*", "", clean_line).strip()
+                speaker = current_speaker
+                current_speaker = 3 - current_speaker
 
         clean_text = re.sub(
             r"^(?:\[|\*\*|\*)*\s*(?:Voz|Voice|Speaker|Locutor|Persona|Host|Presenter|Presentador)[\s_-]*[12abAB]\s*(?:\]|\*\*|\*)*\s*[:\-—]?\s*",

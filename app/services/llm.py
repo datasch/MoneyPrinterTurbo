@@ -499,10 +499,13 @@ def build_script_prompt(
         if voice_mode == "podcast"
         else DEFAULT_SCRIPT_SYSTEM_PROMPT
     )
-    if not custom_system_prompt or custom_system_prompt.strip() == DEFAULT_SCRIPT_SYSTEM_PROMPT.strip():
+    clean_custom = (custom_system_prompt or "").strip()
+    if not clean_custom or clean_custom in (DEFAULT_SCRIPT_SYSTEM_PROMPT.strip(), DEFAULT_PODCAST_SCRIPT_SYSTEM_PROMPT.strip()):
         prompt = default_prompt
     else:
         prompt = custom_system_prompt
+        if voice_mode == "podcast" and not any(tag in prompt.upper() for tag in ["VOZ", "SPEAKER", "LOCUTOR"]):
+            prompt += f"\n\n{DEFAULT_PODCAST_SCRIPT_SYSTEM_PROMPT}"
     prompt += f"""
 
 # Initialization:
