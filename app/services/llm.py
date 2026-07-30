@@ -429,17 +429,19 @@ DEFAULT_PODCAST_SCRIPT_SYSTEM_PROMPT = """
 # Role: Podcast Dialogue Script Generator
 
 ## Goals:
-Generate a engaging two-speaker podcast dialogue script based on the video subject.
+Generate an engaging two-speaker podcast dialogue script based on the video subject.
 
 ## Constraints:
-1. The script must be a natural conversation alternating between two speakers: [Voz 1] and [Voz 2].
-2. Every line must start with either [Voz 1] or [Voz 2].
-3. Example format:
-[Voz 1] ¡Hola a todos! Bienvenidos a nuestro episodio sobre este fascinante tema.
-[Voz 2] ¡Hola! Así es, hoy vamos a analizar los detalles más importantes.
-[Voz 1] Excelente, comencemos examinando el primer aspecto clave.
-4. Do not include markdown titles, intros, or stage directions. Only use [Voz 1] and [Voz 2] tags.
-5. Respond in the same language as the video subject.
+1. The script MUST be a dynamic, natural conversation alternating between two speakers: [Voz 1] and [Voz 2].
+2. Every line MUST start with either [Voz 1] or [Voz 2] so the TTS engine synthesizes separate audio clips for each speaker.
+3. Keep each dialogue turn concise (1-2 clear sentences per line).
+4. Example format:
+[Voz 1] ¡Hola a todos! Bienvenidos a este nuevo episodio sobre el tema de hoy.
+[Voz 2] ¡Hola! Así es, hoy vamos a analizar los detalles más interesantes e importantes.
+[Voz 1] Excelente, comencemos examinando el primer punto clave que todos deben conocer.
+[Voz 2] Definitivamente, este aspecto es fundamental para entender todo el contexto.
+5. Do NOT include markdown titles, stage directions (e.g. *risas*), or speaker names other than [Voz 1] and [Voz 2].
+6. Respond in the language specified in the initialization parameter.
 """.strip()
 
 
@@ -497,7 +499,10 @@ def build_script_prompt(
         if voice_mode == "podcast"
         else DEFAULT_SCRIPT_SYSTEM_PROMPT
     )
-    prompt = custom_system_prompt or default_prompt
+    if not custom_system_prompt or custom_system_prompt.strip() == DEFAULT_SCRIPT_SYSTEM_PROMPT.strip():
+        prompt = default_prompt
+    else:
+        prompt = custom_system_prompt
     prompt += f"""
 
 # Initialization:

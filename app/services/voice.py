@@ -509,7 +509,15 @@ def podcast_tts(
     """
     Synthesize a podcast dialogue script alternating between voice_name_1 and voice_name_2.
     """
-    lines = [line.strip() for line in (text or "").split("\n") if line.strip()]
+    if not text:
+        return None
+
+    # Normalize inline speaker tags to force them onto a new line.
+    # This solves the issue where the LLM returns the entire script on a single line.
+    speaker_tag_pattern = r"(?i)(?<!\n)((?:\[|\*\*|\*)*\s*(?:Voz|Voice|Speaker|Locutor|Persona|Host|Presenter|Presentador)[\s_-]*[12abAB]\s*(?:\]|\*\*|\*)*\s*[:\-—]?)"
+    normalized_text = re.sub(speaker_tag_pattern, r"\n\1", text)
+
+    lines = [line.strip() for line in normalized_text.split("\n") if line.strip()]
     if not lines:
         return None
 
@@ -517,20 +525,34 @@ def podcast_tts(
     current_speaker = 1
 
     for line in lines:
+        clean_line = line.strip()
         speaker = current_speaker
-        clean_text = line
+        clean_text = clean_line
 
-        m = re.match(r"^\[(?:Voz|Voice|Speaker|Locutor)\s*([12])\]\s*(.*)", line, re.IGNORECASE)
+        m = re.match(
+            r"^(?:\[|\*\*|\*)*\s*(?:Voz|Voice|Speaker|Locutor|Persona|Host|Presenter|Presentador)[\s_-]*([12abAB])\s*(?:\]|\*\*|\*)*\s*[:\-—]?\s*(.*)",
+            clean_line,
+            re.IGNORECASE,
+        )
         if m:
-            speaker = int(m.group(1))
+            spk_code = m.group(1).upper()
+            speaker = 1 if spk_code in ("1", "A") else 2
             clean_text = m.group(2).strip()
             current_speaker = 3 - speaker
         else:
-            m2 = re.match(r"^(?:Voz|Voice|Speaker|Locutor)\s*([12])\s*:\s*(.*)", line, re.IGNORECASE)
+            m2 = re.match(r"^([12abAB])\s*[:\-—]\s*(.*)", clean_line, re.IGNORECASE)
             if m2:
-                speaker = int(m2.group(1))
+                spk_code = m2.group(1).upper()
+                speaker = 1 if spk_code in ("1", "A") else 2
                 clean_text = m2.group(2).strip()
                 current_speaker = 3 - speaker
+
+        clean_text = re.sub(
+            r"^(?:\[|\*\*|\*)*\s*(?:Voz|Voice|Speaker|Locutor|Persona|Host|Presenter|Presentador)[\s_-]*[12abAB]\s*(?:\]|\*\*|\*)*\s*[:\-—]?\s*",
+            "",
+            clean_text,
+            flags=re.IGNORECASE,
+        ).strip()
 
         if not clean_text:
             continue

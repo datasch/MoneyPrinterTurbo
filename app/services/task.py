@@ -401,6 +401,10 @@ def _resolve_reusable_voice_preview(
         "voice_name": params.voice_name,
         "voice_rate": float(params.voice_rate),
         "voice_volume": float(params.voice_volume),
+        "voice_mode": getattr(params, "voice_mode", "single"),
+        "voice_name_2": getattr(params, "voice_name_2", params.voice_name),
+        "voice_rate_2": float(getattr(params, "voice_rate_2", params.voice_rate)),
+        "voice_volume_2": float(getattr(params, "voice_volume_2", 1.0)),
     }
     if not math.isclose(float(params.voice_volume), 1.0) or any(
         voice_preview.get(key) != value for key, value in expected_values.items()
