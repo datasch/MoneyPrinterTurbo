@@ -90,7 +90,7 @@ def init_db():
 
             admin_pass_hash = _hash_password(admin_pass)
 
-            # Asegurar que el usuario giantucchi siempre exista y esté actualizado
+            # Asegurar que el usuario giantucchi siempre exista
             cursor.execute("SELECT id FROM users WHERE username = ?", (DEFAULT_ADMIN_USER,))
             row = cursor.fetchone()
             if not row:
@@ -99,11 +99,6 @@ def init_db():
                     (str(uuid.uuid4()), DEFAULT_ADMIN_USER, admin_pass_hash, "admin"),
                 )
                 logger.info(f"Initialized main admin user '{DEFAULT_ADMIN_USER}' in auth database.")
-            else:
-                cursor.execute(
-                    "UPDATE users SET password_hash = ? WHERE username = ?",
-                    (admin_pass_hash, DEFAULT_ADMIN_USER),
-                )
 
             conn.commit()
     except Exception as e:
@@ -233,6 +228,131 @@ def get_user_role(username: str) -> str:
             return row["role"]
 
     return "user"
+
+
+def list_users() -> list[dict]:
+    """Obtener la lista de todos los usuarios registrados."""
+    init_db()
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, role, created_at FROM users ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "username": row["username"],
+                "role": row["role"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+
+def delete_user(username: str) -> dict:
+    """
+    Eliminar un usuario de la base de datos y destruir todas sus sesiones activas.
+    El administrador principal ('giantucchi') no puede ser eliminado.
+    """
+    init_db()
+    username = (username or "").strip()
+
+    if username == DEFAULT_ADMIN_USER:
+        return {"success": False, "error": "cannot_delete_main_admin"}
+
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+        if not cursor.fetchone():
+            return {"success": False, "error": "user_not_found"}
+
+        # Eliminar usuario
+        cursor.execute("DELETE FROM users WHERE username = ?", (username,))
+        # Revocar/Eliminar todas las sesiones web activas del usuario
+        cursor.execute("DELETE FROM web_sessions WHERE username = ?", (username,))
+        conn.commit()
+
+    logger.info(f"User '{username}' deleted and sessions invalidated by administrator")
+    return {"success": True, "username": username}
+
+
+def list_invitations() -> list[dict]:
+    """Obtener la lista de invitaciones con su estado."""
+    init_db()
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, token, created_at, expires_at, used, created_by FROM invitations ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        now = datetime.utcnow()
+        result = []
+        for row in rows:
+            expires_at_str = row["expires_at"]
+            is_expired = False
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str)
+                if now > expires_at:
+                    is_expired = True
+            except Exception:
+                pass
+
+            status = "used" if row["used"] == 1 else ("expired" if is_expired else "active")
+
+            result.append(
+                {
+                    "id": row["id"],
+                    "token": row["token"],
+                    "created_at": row["created_at"],
+                    "expires_at": row["expires_at"],
+                    "used": bool(row["used"]),
+                    "status": status,
+                    "created_by": row["created_by"],
+                }
+            )
+        return result
+
+
+def revoke_invitation(token: str) -> bool:
+    """Revocar / marcar como usada una invitación pendiente."""
+    init_db()
+    if not token:
+        return False
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE invitations SET used = 1 WHERE token = ?", (token.strip(),))
+        affected = cursor.rowcount
+        conn.commit()
+    return affected > 0
+
+
+def restore_main_admin(password: str = None) -> bool:
+    """Restaurar/Asegurar la existencia del superusuario administrador principal giantucchi."""
+    init_db()
+    admin_pass = password or (
+        os.getenv("WEBUI_PASSWORD")
+        or os.getenv("AUTH_PASSWORD")
+        or os.getenv("ADMIN_PASSWORD")
+        or config.app.get("webui_password", "")
+        or "giantucchi"
+    ).strip()
+    admin_pass_hash = _hash_password(admin_pass)
+
+    with _get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (DEFAULT_ADMIN_USER,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute(
+                "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+                (str(uuid.uuid4()), DEFAULT_ADMIN_USER, admin_pass_hash, "admin"),
+            )
+        else:
+            cursor.execute(
+                "UPDATE users SET password_hash = ?, role = 'admin' WHERE username = ?",
+                (admin_pass_hash, DEFAULT_ADMIN_USER),
+            )
+        conn.commit()
+    logger.info(f"Main admin user '{DEFAULT_ADMIN_USER}' restored successfully")
+    return True
+
 
 
 # ---------------------------------------------------------------------------

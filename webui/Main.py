@@ -1094,6 +1094,12 @@ def _dismiss_settings_dialog():
     st.session_state["settings_dialog_open"] = False
 
 
+def _dismiss_user_mgmt_dialog():
+    """Cerrar el diálogo de gestión de usuarios."""
+    st.session_state["user_mgmt_dialog_open"] = False
+
+
+
 def _render_brand(available_update: str | None = None):
     """渲染 Giantucchi 品牌 Logo、项目名称、当前版本和可选的更新入口。"""
     update_link = ""
@@ -1335,13 +1341,8 @@ def _render_login_page(expected_username, expected_password):
 
 
 def _check_authentication() -> bool:
-    """检查 URL 邀请 Token 或登录状态。"""
-    is_streamlit_cli = "run" in sys.argv and any("streamlit" in str(arg).lower() for arg in sys.argv)
-    if not is_streamlit_cli or st.session_state.get("authenticated", False):
-        return True
-
-    username, password = _get_auth_credentials()
-    if not password:
+    """Verificar URL de invitación o estado de autenticación."""
+    if st.session_state.get("authenticated", False):
         return True
 
     # 检查 URL 查询参数 ?invite=<token>
@@ -1365,11 +1366,13 @@ def _check_authentication() -> bool:
                 pocketbase_auth.touch_session(persistent_token)
                 return True
             else:
-                # Token expirado → limpiar
+                # Token expirado o revocado → limpiar
                 st.session_state.pop("session_token", None)
+                st.session_state["authenticated"] = False
         except Exception as _ve:
             logger.warning(f"session validation error: {_ve}")
 
+    username, password = _get_auth_credentials()
     _render_login_page(username or "giantucchi", password)
     return False
 
@@ -1415,6 +1418,15 @@ def _render_top_bar():
                         width="content",
                     ):
                         st.session_state["settings_dialog_open"] = True
+
+                    if st.button(
+                        tr("User Management"),
+                        key="open_user_mgmt_dialog_button",
+                        type="secondary",
+                        icon=":material/manage_accounts:",
+                        width="content",
+                    ):
+                        st.session_state["user_mgmt_dialog_open"] = True
 
                     if st.button(
                         tr("Generate Invitation Link"),
@@ -2441,6 +2453,144 @@ def _render_settings_dialog():
             _save_material_api_keys("coverr_api_keys", coverr_api_key)
 
     config.save_config()
+
+
+@st.dialog(
+    tr("User & Access Management"),
+    width="large",
+    on_dismiss=_dismiss_user_mgmt_dialog,
+)
+def _render_user_management_dialog():
+    """Diálogo modal para listar usuarios, revocar accesos y administrar invitaciones."""
+    logged_user = st.session_state.get("logged_user", "")
+    is_admin = (
+        logged_user == "giantucchi"
+        or pocketbase_auth.get_user_role(logged_user) == "admin"
+        or not logged_user
+    )
+
+    if not is_admin:
+        st.error(tr("Only the main administrator has access to this panel."))
+        if st.button(tr("Close"), key="close_um_denied"):
+            st.session_state["user_mgmt_dialog_open"] = False
+            st.rerun(scope="app")
+        return
+
+    tab_users, tab_invites = st.tabs(
+        [f"👥 {tr('Registered Users')}", f"🔗 {tr('Invitation Links')}"]
+    )
+
+    with tab_users:
+        st.caption(tr("View registered users and manage or revoke their system access."))
+        users = pocketbase_auth.list_users()
+
+        st.metric(label=tr("Total Registered Users"), value=len(users))
+        st.write("")
+
+        for u in users:
+            uname = u["username"]
+            role = u["role"]
+            created = u["created_at"]
+
+            col_info, col_act = st.columns([3, 1], vertical_alignment="center")
+            with col_info:
+                if uname == "giantucchi":
+                    st.markdown(
+                        f"**👤 {uname}** `(👑 {tr('Principal Admin')})`\n\n"
+                        f"<small>📅 {tr('Registered')}: {created}</small>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"**👤 {uname}** `({tr('Role')}: {role})`\n\n"
+                        f"<small>📅 {tr('Registered')}: {created}</small>",
+                        unsafe_allow_html=True,
+                    )
+
+            with col_act:
+                if uname == "giantucchi":
+                    st.button(
+                        f"🛡️ {tr('Protected')}",
+                        key=f"del_user_{uname}",
+                        disabled=True,
+                        use_container_width=True,
+                    )
+                else:
+                    if st.button(
+                        f"🗑️ {tr('Revoke Access')}",
+                        key=f"del_user_{uname}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        res = pocketbase_auth.delete_user(uname)
+                        if res.get("success"):
+                            st.success(f"{tr('User Access Revoked')}: {uname}")
+                            st.rerun(scope="app")
+                        else:
+                            st.error(f"Error: {res.get('error')}")
+
+            st.divider()
+
+    with tab_invites:
+        st.caption(tr("Manage 1-hour single-use invitation links for new users."))
+
+        if st.button(
+            f"➕ {tr('Generate Invitation Link')}",
+            key="gen_invite_link_dialog_btn",
+            type="primary",
+            use_container_width=True,
+        ):
+            new_token = pocketbase_auth.create_invitation_token(
+                created_by=logged_user or "giantucchi", expires_in_seconds=3600
+            )
+            st.session_state["generated_invite_token"] = new_token
+            st.rerun(scope="app")
+
+        if st.session_state.get("generated_invite_token"):
+            gen_token = st.session_state["generated_invite_token"]
+            st.info(
+                f"🔗 **{tr('Invitation Link Generated')} (Válido 1 hora / 1 solo uso):**\n\n"
+                f"`/?invite={gen_token}`\n\n"
+                f"*(Copia la ruta `/?invite={gen_token}` y agrégala al dominio público)*"
+            )
+
+        invitations = pocketbase_auth.list_invitations()
+        if not invitations:
+            st.info(tr("No invitation links found."))
+        else:
+            for inv in invitations:
+                token = inv["token"]
+                status = inv["status"]
+                created = inv["created_at"]
+                creator = inv["created_by"]
+
+                status_label = (
+                    "🟢 Activo"
+                    if status == "active"
+                    else ("🔴 Usado" if status == "used" else "⏳ Expirado")
+                )
+
+                c_info, c_act = st.columns([3, 1], vertical_alignment="center")
+                with c_info:
+                    st.markdown(
+                        f"`{token[:16]}...` | {status_label}\n\n"
+                        f"<small>👤 {tr('Created By')}: {creator} | 📅 {created}</small>",
+                        unsafe_allow_html=True,
+                    )
+                with c_act:
+                    if status == "active":
+                        if st.button(
+                            f"🚫 {tr('Revoke Link')}",
+                            key=f"revoke_inv_{token}",
+                            type="secondary",
+                            use_container_width=True,
+                        ):
+                            pocketbase_auth.revoke_invitation(token)
+                            st.toast(tr("Invitation Link Revoked"), icon="🚫")
+                            st.rerun(scope="app")
+                    else:
+                        st.caption(status_label)
+                st.divider()
 
 
 # -----------------------------------------------------------------------------
@@ -4351,6 +4501,9 @@ def _render_application():
 
     if st.session_state.get("settings_dialog_open", False):
         _render_settings_dialog()
+
+    if st.session_state.get("user_mgmt_dialog_open", False):
+        _render_user_management_dialog()
 
     restore_applied = _apply_pending_task_restore()
     restore_candidate_id = st.session_state.get("task_restore_candidate_id")
